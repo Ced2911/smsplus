@@ -1,0 +1,108 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "(gdb) Yabause Launch",
+            "type": "cppdbg",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/build/",
+            "program": "${workspaceFolder}/build/smsplus.elf",
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb-multiarch",
+            "miDebuggerServerAddress": "host.docker.internal:43434",
+            //"sourceFileMap"
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set SH2 mode",
+                    "text": "-gdb-set architecture sh2",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        
+        {
+            "name": "C/C++: odefs tests",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/odefs/odefs-test",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/tests/odefs/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Activer l'impression en mode Pretty pour gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Définir la version désassemblage sur Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "odefs_makefile",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+
+        {
+            "name": "C/C++: dbg font",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/fonts/font",
+            "args": ["/workspaces/loader_yaul/assets/Street Fighter Alpha Regular.bff", "/workspaces/loader_yaul/assets/sfa.c", "sfa"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/tools/fonts/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Activer l'impression en mode Pretty pour gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Définir la version désassemblage sur Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "C/C++: gcc build font tools",
+            "miDebuggerPath": "/usr/bin/gdb"
+        },
+        {
+            "name": "C/C++: vgm",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/workspaces/loader_yaul/tools/vgmplay/build/vgmtest",
+            "args": [],
+            "stopAtEntry": true,
+            "cwd": "/workspaces/loader_yaul/tools/vgmplay/build/",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Activer l'impression en mode Pretty pour gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Définir la version désassemblage sur Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+          //  "preLaunchTask": "build_vgm",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ]
+}

@@ -1,31 +1,35 @@
 #define _SPR2_
-#include "sega_spr.h"
-#include "sega_scl2.h"
+#include <stdint.h>
+#include <stdlib.h>
+#include <yaul.h>
 #include "shared.h"
-//#include "cz80/cz80.h"
 
-//#define ACTION_REPLAY 1 //utile
-extern SprSpCmd  smsSprite[64+3];
-extern Uint16 *colAddr; 
-extern Uint16 *colBgAddr; 
-extern Uint8 *aVRAM;
+#define NAME_LUT_SZ (1 << 13)
+#define NAME_LUT_MASK (NAME_LUT_SZ - 1)
+
+// #include "cz80/cz80.h"
+
+// #define ACTION_REPLAY 1 //utile
+extern vdp1_cmdt_t *smsSprite;
+extern uint8_t *spr_tex_data;
+extern uint8_t *bg_tex_data;
+extern uint16_t *colAddr;
+extern uint16_t *colBgAddr;
 extern unsigned int hz;
-#ifndef ACTION_REPLAY
-static Uint16 *name_lut;//name_lut[0x10000];
-#else
-static Uint16 name_lut[0x10000];
-#endif
-static Uint32 bp_lut[0x10000];
-static Uint16 cram_lut[0x40];
-static Uint16 *ss_map =(Uint16 *)SCL_VDP2_VRAM_B0;;
-extern int scroll_x,scroll_y;
+static uint16_t name_lut[NAME_LUT_SZ];
+static uint32_t bp_lut[0x10000];
+static uint16_t cram_lut[0x40];
+// static uint16_t *ss_map = (uint16_t *)SCL_VDP2_VRAM_B0;
+extern uint16_t *ss_map;
+
+extern int scroll_x, scroll_y;
 extern t_sms sms;
-unsigned char *cache;
 #define ALIGN_DWORD
-#define	RGB( r, g, b )		(0x8000U|((b) << 10)|((g) << 5 )|(r))
+#define RGB(r, g, b) (0x8000U | ((b) << 10) | ((g) << 5) | (r))
 /* VDP context */
 t_vdp vdp;
 
+// clang-format off
 /* Return values from the V counter */
 uint8 vcnt[0x200] =
 {
@@ -74,11 +78,12 @@ uint8 hcnt[0x200] =
     0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF,
     0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF,
 };
+
+// clang-format on
 //-------------------------------------------------------------------------------------------------------------------------------------
-static __inline__ void	_spr2_transfercommand()
-{
-	memcpyl(aVRAM,smsSprite,0x860 ) ;
-}
+extern void vdp1_clear_list();
+extern void vdp1_sync_list();
+
 /* Reset VDP emulation */
 void vdp_reset(void)
 {
@@ -88,7 +93,7 @@ void vdp_reset(void)
 void vdp_ctrl_w(int data)
 {
     /* Waiting for the reset of the command? */
-    if(vdp.pending == 0)
+    if (vdp.pending == 0)
     {
         /* Save data for later */
         vdp.latch = data;
@@ -108,7 +113,7 @@ void vdp_ctrl_w(int data)
         vdp.addr = (data << 8 | vdp.latch) & 0x3FFF;
 
         /* Read VRAM for code 0 */
-        if(vdp.code == 0)
+        if (vdp.code == 0)
         {
             /* Load buffer with current VRAM byte */
             vdp.buffer = vdp.vram[vdp.addr & 0x3FFF];
@@ -118,32 +123,32 @@ void vdp_ctrl_w(int data)
         }
 
         /* VDP register write */
-//        if((data & 0xF0) == 0x80)
-        if(vdp.code == 2)
+        //        if((data & 0xF0) == 0x80)
+        if (vdp.code == 2)
         {
             int r = (data & 0x0F);
             /* Store register data */
             vdp.reg[r] = vdp.latch;
-			switch(r)
-			{
-				case 8 :
-//					x =  ((vdp.reg[r]) ^ 0xff) & 0xff;
-					scroll_x =  ((vdp.reg[r]) ^ 0xff) ;
-					scroll_x<<=16;
-					break;
+            switch (r)
+            {
+            case 8:
+                // x =  ((vdp.reg[r]) ^ 0xff) & 0xff;
+                vdp.scroll_x = ((vdp.reg[r]) ^ 0xff);
+                vdp.scroll_x <<= 16;
+                break;
 
-				case 9 :
-					scroll_y = (vdp.reg[r]&0xff)<<16;
-					break;
-				/* Update table addresses */
-				case 2 :
-					vdp.ntab = (vdp.reg[2] << 10) & 0x3800;
-					break;
+            case 9:
+                vdp.scroll_y = (vdp.reg[r] & 0xff) << 16;
+                break;
+            /* Update table addresses */
+            case 2:
+                vdp.ntab = (vdp.reg[2] << 10) & 0x3800;
+                break;
 
-				case 5 :
-					vdp.satb = (vdp.reg[5] << 7) & 0x3F00;
-					break;
-			}
+            case 5:
+                vdp.satb = (vdp.reg[5] << 7) & 0x3F00;
+                break;
+            }
         }
     }
 }
@@ -156,12 +161,11 @@ int vdp_ctrl_r(void)
 
     /* Clear pending flag */
     vdp.pending = 0;
-	vdp.status = 0;
-	z80_lower_IRQ();
+    vdp.status = 0;
+    z80_lower_IRQ();
     /* Return the old status flags */
     return (temp);
 }
-
 
 /* Write data to the VDP's data port */
 void vdp_data_w(int data)
@@ -172,134 +176,147 @@ void vdp_data_w(int data)
     /* Clear the pending flag */
     vdp.pending = 0;
 
-    switch(vdp.code)
+    switch (vdp.code)
     {
-        case 0: /* VRAM write */
-        case 1: /* VRAM write */
-        case 2: /* VRAM write */
+    case 0: /* VRAM write */
+    case 1: /* VRAM write */
+    case 2: /* VRAM write */
 
-            /* Get current address in VRAM */
-            index = (vdp.addr & 0x3FFF);
+        /* Get current address in VRAM */
+        index = (vdp.addr & 0x3FFF);
 
-            /* Only update if data is new */
-            if(data != vdp.vram[index])
+        /* Only update if data is new */
+        if (data != vdp.vram[index])
+        {
+            /* Store VRAM byte */
+            vdp.vram[index] = data;
+
+            //				if(index>=vdp.ntab && index<vdp.ntab+0x700)
+            // VBT 04/02/2007 : modif compilo
+            if (index >= vdp.ntab)
+                if (index < vdp.ntab + 0x700)
+                {
+                    int row, column;
+                    uint16_t temp;
+                    uint16_t delta = index - vdp.ntab;
+                    row = delta & 0x7C0; //					row = (delta >> 6) & 0x1F;
+                    column = (delta >> 1) & 0x1F;
+                    temp = __builtin_bswap16(*(uint16 *)&vdp.vram[index & ~1]);
+                    // temp = (*(uint16 *)&vdp.vram[index & ~1]);
+                    delta = row + column;
+
+                    ss_map[delta] =
+                        ss_map[delta + 32] =
+                            ss_map[0x700 + delta] =
+                                ss_map[0x700 + delta + 32] =
+                                    name_lut[temp & NAME_LUT_MASK];
+                }
+            /* Mark patterns as dirty */
+            uint32 bp = *(uint32 *)&vdp.vram[index & ~3];
+            uint32 *pg = (uint32 *)&bg_tex_data[(index & ~3)];
+            uint32 *sg = (uint32 *)&spr_tex_data[(index & ~3)];
+            uint32 temp1 = bp_lut[bp & 0xFFFF];
+            uint32 temp2 = bp_lut[(bp >> 16) & 0xFFFF];
+            *sg = (temp1 << 2 | temp2);
+            *pg = (temp1 << 2 | temp2);
+        }
+
+        // VBT : A REMETTRE A LA PLACE  de rederSprite des que le probleme sur yp=208 est rï¿½solu
+        //  VBT04/02/2007 modif compilo
+        if (index >= vdp.satb)
+            if (index < vdp.satb + 0x40)
             {
-				/* Store VRAM byte */
-                vdp.vram[index] = data;
+                uint32_t delta = (index - vdp.satb);
+                vdp1_cmdt_t *smsSpritePtr = &smsSprite[delta];
 
-//				if(index>=vdp.ntab && index<vdp.ntab+0x700)
-// VBT 04/02/2007 : modif compilo
-				if(index>=vdp.ntab)
-					if( index<vdp.ntab+0x700)
-				{
-					int row,column;
-					word temp;
-					delta =index - vdp.ntab;
-					row = delta & 0x7C0;	  //					row = (delta >> 6) & 0x1F;
-					column = (delta>>1) & 0x1F;
-					temp = *(uint16 *)&vdp.vram[index&~1];
-//					delta = (row<<6)+column;
-					delta = row+column;
-					ss_map[delta] =ss_map[delta+32] =ss_map[0x700+delta] =ss_map[0x700+delta+32] =name_lut[temp];
-				}
-                /* Mark patterns as dirty */
-        uint32 bp = *(uint32 *)&vdp.vram[index & ~3];
-        uint32 *pg = (uint32 *) &cache[0x00000 | (index & ~3)];
-        uint32 *sg = (uint32 *)&aVRAM[0x880 + (index & ~3)];
-        uint32 temp1 = bp_lut[bp & 0xFFFF];
-        uint32 temp2 = bp_lut[(bp>>16) & 0xFFFF];
-        *sg= *pg = (temp1<<2 | temp2 );
-//        *pg = (temp1<<2 | temp2 );
+                // Sprite dimensions
+                int height = (vdp.reg[1] & 0x02) ? 16 : 8;
 
+                // Pointer to sprite attribute table
+                byte *st = (byte *)&vdp.vram[vdp.satb];
+                // Sprite Y position
+                int yp = st[delta];
+
+                if (yp == 208)
+                {
+
+                    vdp1_cmdt_end_set(smsSpritePtr);
+                    //					nbSprites = delta+5;
+                    // ajouter un flag
+                    break;
+                }
+                // Actual Y position is +1
+                yp++;
+                // Wrap Y coordinate for sprites > 240
+                if (yp > 240)
+                    yp -= 256;
+
+                // Clip sprites on left edge
+                vdp1_cmdt_draw_mode_t mode = {
+                    .cc_mode = VDP1_CMDT_CC_REPLACE,
+                    .end_code_disable = 1,
+                    .color_mode = VDP1_CMDT_CM_CB_16,
+                };
+
+                smsSpritePtr->cmd_colr = 8 << 1;
+                vdp1_cmdt_normal_sprite_set(smsSpritePtr);
+                vdp1_cmdt_draw_mode_set(smsSpritePtr, mode);
+                vdp1_cmdt_char_size_set(smsSpritePtr, 8, height); // 8x8/8x16 sprites
+                smsSpritePtr->cmd_ya = yp;
+            }
+        // VBT 04/02/2007 : modif compilo
+        if (index >= vdp.satb + 0x80)
+            if (index < vdp.satb + 0x100)
+            {
+                uint32_t delta = ((index - (vdp.satb + 0x80))) >> 1;
+                vdp1_cmdt_t *smsSpritePtr = &smsSprite[delta];
+
+                byte *st = (byte *)&vdp.vram[vdp.satb];
+
+                if ((index - vdp.satb) & 1)
+                {
+                    uint16_t n = st[0x81 + (delta << 1)];
+                    // Add MSB of pattern name
+                    if (vdp.reg[6] & 0x04)
+                        n |= 0x0100;
+                    // Mask LSB for 8x16 sprites
+                    if (vdp.reg[1] & 0x02)
+                        n &= 0x01FE;
+
+                    // smsSprite[delta + 3].charAddr = 0x110 + (n << 2);
+                    uint32_t addr = (uint32_t)spr_tex_data + (n << 5);
+                    vdp1_cmdt_char_base_set(smsSpritePtr, addr);
+                }
+                else
+                {
+                    // Sprite X position
+                    int xp = st[0x80 + (delta << 1)];
+                    // X position shift
+                    if (vdp.reg[0] & 0x08)
+                        xp -= 8;
+                    // smsSprite[delta + 3].ax = xp;
+                    smsSpritePtr->cmd_xa = xp;
+                }
             }
 
-//VBT : A REMETTRE A LA PLACE  de rederSprite des que le probleme sur yp=208 est résolu
-// VBT04/02/2007 modif compilo
-			if(index>=vdp.satb )
-				if( index < vdp.satb+0x40)
-			{
-				SprSpCmd *smsSpritePtr;
-				smsSpritePtr = &smsSprite[3];
+        break;
 
-				// Sprite dimensions 
-				int height = (vdp.reg[1] & 0x02) ? 16 : 8;
+    case 3: /* CRAM write */
+        index = (vdp.addr & 0x1F);
+        if (data != vdp.cram[index])
+        {
+            vdp.cram[index] = data;
+            colBgAddr[index] = cram_lut[data & 0x3F];
 
-				delta=(index-vdp.satb);
-			// Pointer to sprite attribute table 
-				byte *st = (byte *)&vdp.vram[vdp.satb];
-				// Sprite Y position 
-				int yp = st[delta];
-
-				if(yp == 208) 
-				{
-					
-					smsSpritePtr[delta].control = CTRL_END;
-					smsSpritePtr[delta].drawMode = 0;
-					smsSpritePtr[delta].charAddr	= 0;
-					smsSpritePtr[delta].charSize		= 0;
-					smsSpritePtr[delta].ax	= 0;
-					smsSpritePtr[delta].ay	= 0;
-//					nbSprites = delta+5;
-//ajouter un flag
-					break;
-				}
-				//Actual Y position is +1 
-				yp ++;
-				//Wrap Y coordinate for sprites > 240 
-				if(yp > 240) yp -= 256;
-				smsSpritePtr[delta].ay = yp;
-
-				// Clip sprites on left edge 
-				smsSpritePtr[delta].control = ( JUMP_NEXT | FUNC_NORMALSP);
-				smsSpritePtr[delta].drawMode   = ( COLOR_0 | ECD_DISABLE | COMPO_REP);		
-				smsSpritePtr[delta].charSize   = 0x100+ height;  //0x100
-			}
-// VBT 04/02/2007 : modif compilo
-			if(index>=vdp.satb+0x80)
-				if(index < vdp.satb+0x100)
-			{
-				byte *st = (byte *)&vdp.vram[vdp.satb];
-				delta=((index-(vdp.satb+0x80)))>>1;
-
-				if((index-vdp.satb) &1)
-				{
-					int n = st[0x81 + (delta << 1)];
-					//Add MSB of pattern name 
-					if(vdp.reg[6] & 0x04) n |= 0x0100;
-					//Mask LSB for 8x16 sprites 
-					if(vdp.reg[1] & 0x02) n &= 0x01FE;
-
-					smsSprite[delta+3].charAddr   =  0x110+(n<<2);
-				}
-				else
-				{
-						//Sprite X position 
-					int xp = st[0x80 + (delta << 1)];
-					//X position shift 
-					if(vdp.reg[0] & 0x08) xp -= 8;
-					smsSprite[delta+3].ax = xp;
-				}
-
-			}
-
-            break;
-
-        case 3: /* CRAM write */
-            index = (vdp.addr & 0x1F);
-            if(data != vdp.cram[index])
-            {
-                vdp.cram[index] = data;
-				colBgAddr[index] = cram_lut[data & 0x3F];
-
-				  if (index>0x0f)
-					colAddr[index&0x0f] =  colBgAddr[index];
-            }
-            break;
+            if (index > 0x0f)
+                colAddr[index & 0x0f] = colBgAddr[index];
+        }
+        break;
     }
 
     /* Bump the VRAM address */
-//     vdp.addr ++;
-		vdp.addr =(vdp.addr + 1) & 0x3FFF;
+    //     vdp.addr ++;
+    vdp.addr = (vdp.addr + 1) & 0x3FFF;
 }
 
 /* Read data from the VDP's data port */
@@ -308,32 +325,31 @@ int vdp_data_r(void)
     uint8 temp = 0;
     vdp.pending = 0;
     temp = vdp.buffer;
-//    vdp.buffer = vdp.vram[(vdp.addr & 0x3FFF)^1];
+    //    vdp.buffer = vdp.vram[(vdp.addr & 0x3FFF)^1];
     vdp.buffer = vdp.vram[(vdp.addr & 0x3FFF)];
     vdp.addr = (vdp.addr + 1) & 0x3FFF;
     return temp;
 }
 
-
-
 /* Process frame events */
 void vdp_run(void)
-//void vdp_run(t_vdp *vdp)
+// void vdp_run(t_vdp *vdp)
 {
-    if(vdp.line <= 0xC0)
+    if (vdp.line <= 0xC0)
     {
-        if(vdp.line == 0xC0)
+        if (vdp.line == 0xC0)
         {
-            _spr2_transfercommand();
+            //_spr2_transfercommand();
+            vdp1_sync_list();
             vdp.status |= 0x80;
         }
 
-		if(vdp.line == 0)
+        if (vdp.line == 0)
         {
             vdp.left = vdp.reg[10];
         }
 
-        if(vdp.left == 0)
+        if (vdp.left == 0)
         {
             vdp.left = vdp.reg[10];
             vdp.status |= 0x40;
@@ -342,96 +358,98 @@ void vdp_run(void)
         {
             vdp.left -= 1;
         }
-        if((vdp.status & 0x40) && (vdp.reg[0] & 0x10))
+        if ((vdp.status & 0x40) && (vdp.reg[0] & 0x10))
         {
             sms.irq = 1;
-//            z80_set_irq_line(0, ASSERT_LINE);
-//            Cz80_Set_IRQ(&Cz80_struc, 0);
-			z80_raise_IRQ(0);
+            //            z80_set_irq_line(0, ASSERT_LINE);
+            //            Cz80_Set_IRQ(&Cz80_struc, 0);
+            z80_raise_IRQ(0);
         }
     }
     else
     {
         vdp.left = vdp.reg[10];
 
-        if((vdp.line < 0xE0) && (vdp.status & 0x80) && (vdp.reg[1] & 0x20))
+        if ((vdp.line < 0xE0) && (vdp.status & 0x80) && (vdp.reg[1] & 0x20))
         {
             sms.irq = 1;
-//            z80_set_irq_line(0, ASSERT_LINE);
-//              Cz80_Set_IRQ(&Cz80_struc, 0);
+            //            z80_set_irq_line(0, ASSERT_LINE);
+            //              Cz80_Set_IRQ(&Cz80_struc, 0);
             z80_raise_IRQ(0);
         }
     }
 }
-
 
 uint8 vdp_vcounter_r(void)
 {
     return (vcnt[(vdp.line & 0x1FF)]);
 }
 
-
 uint8 vdp_hcounter_r(void)
 {
-//    int pixel = (((z80_ICount % CYCLES_PER_LINE) / 4) * 3) * 2;
-//  int pixel = (((Cz80_struc.CycleIO % CYCLES_PER_LINE) / 4) * 3) * 2;
-  int pixel;
-  if (hz==60)
-	pixel = (((z80_get_cycles_elapsed() % CYCLES_PER_LINE_60) >>2) * 3) <<1;
-  else
-	pixel = (((z80_get_cycles_elapsed() % CYCLES_PER_LINE_50) >>2) * 3) <<1;
-//	printf("Cz80_struc.CycleIO %d\n pixel %d\n",Cz80_struc.CycleIO,pixel);
+    //    int pixel = (((z80_ICount % CYCLES_PER_LINE) / 4) * 3) * 2;
+    //  int pixel = (((Cz80_struc.CycleIO % CYCLES_PER_LINE) / 4) * 3) * 2;
+    int pixel;
+    if (hz == 60)
+        pixel = (((z80_get_cycles_elapsed() % CYCLES_PER_LINE_60) >> 2) * 3) << 1;
+    else
+        pixel = (((z80_get_cycles_elapsed() % CYCLES_PER_LINE_50) >> 2) * 3) << 1;
+    //	printf("Cz80_struc.CycleIO %d\n pixel %d\n",Cz80_struc.CycleIO,pixel);
     return (hcnt[((pixel >> 1) & 0x1FF)]);
 }
 
-
-void make_name_lut(long filesize)
+void make_name_lut()
 {
-#ifndef ACTION_REPLAY
-//	if (filesize > 0x40000 && filesize <=0x80000)
-// VBT 11/11/2011 : à remettre si on a pas assez de mémoire
-
-	if (filesize ==0x80000)
-		name_lut = (Uint16 *)0x00200000;
-	else
-		name_lut = (Uint16 *)0x0607F000; 
-#endif
-
-	int i, j;
-	for(j = 0; j < 0x10000; j++)
-	{
-		i = ((j >> 8) & 0xFF) | ((j  & 0xFF) <<8);
-		int name = (i & 0x1FF);
-		int flip = (i >> 9) & 3;
-		int pal = (i >> 11) & 1;
-		name_lut[j] = (pal << 12 | flip << 10 | name);
-	}
+    for (int j = 0; j < NAME_LUT_SZ; j++)
+    {
+        int name = (j & 0x1FF);
+        int flip = (j >> 9) & 3;
+        int pal = (j >> 11) & 1;
+        name_lut[j] = (pal << 12 | flip << 10 | name);
+        // name_lut[j] = VDP2_SCRN_PND_CONFIG_0(0, bg_tex_data + (name << 5), colBgAddr + (pal << 5), flip >> 1, flip & 1);
+    }
 }
 
 void make_bp_lut(void)
 {
     int i, j;
-    for(j = 0; j < 0x10000; j++)
+    for (j = 0; j < 0x10000; j++)
     {
         uint32 row = 0;
-        i = ((j >> 8) & 0xFF) | ((j  & 0xFF) <<8);
+        i = ((j >> 8) & 0xFF) | ((j & 0xFF) << 8);
 
-        if(i & 0x8000) row |= 0x20000000;
-        if(i & 0x4000) row |= 0x02000000;
-        if(i & 0x2000) row |= 0x00200000;
-        if(i & 0x1000) row |= 0x00020000;
-        if(i & 0x0800) row |= 0x00002000;
-        if(i & 0x0400) row |= 0x00000200;
-        if(i & 0x0200) row |= 0x00000020;
-        if(i & 0x0100) row |= 0x00000002;
-        if(i & 0x0080) row |= 0x10000000;
-        if(i & 0x0040) row |= 0x01000000;
-        if(i & 0x0020) row |= 0x00100000;
-        if(i & 0x0010) row |= 0x00010000;
-        if(i & 0x0008) row |= 0x00001000;
-        if(i & 0x0004) row |= 0x00000100;
-        if(i & 0x0002) row |= 0x00000010;
-        if(i & 0x0001) row |= 0x00000001;
+        if (i & 0x8000)
+            row |= 0x20000000;
+        if (i & 0x4000)
+            row |= 0x02000000;
+        if (i & 0x2000)
+            row |= 0x00200000;
+        if (i & 0x1000)
+            row |= 0x00020000;
+        if (i & 0x0800)
+            row |= 0x00002000;
+        if (i & 0x0400)
+            row |= 0x00000200;
+        if (i & 0x0200)
+            row |= 0x00000020;
+        if (i & 0x0100)
+            row |= 0x00000002;
+        if (i & 0x0080)
+            row |= 0x10000000;
+        if (i & 0x0040)
+            row |= 0x01000000;
+        if (i & 0x0020)
+            row |= 0x00100000;
+        if (i & 0x0010)
+            row |= 0x00010000;
+        if (i & 0x0008)
+            row |= 0x00001000;
+        if (i & 0x0004)
+            row |= 0x00000100;
+        if (i & 0x0002)
+            row |= 0x00000010;
+        if (i & 0x0001)
+            row |= 0x00000001;
         bp_lut[j] = row;
     }
 }
@@ -439,16 +457,14 @@ void make_bp_lut(void)
 void make_cram_lut(void)
 {
     int j;
-    for(j = 0; j < 0x40; j++)
+    for (j = 0; j < 0x40; j++)
     {
-        int r = (j >> 0) & 3;
-        int g = (j >> 2) & 3;
-        int b = (j >> 4) & 3;
-        r  = (r << 3) | (r << 1) | (r >> 1);
+        uint8_t r = (j >> 0) & 3;
+        uint8_t g = (j >> 2) & 3;
+        uint8_t b = (j >> 4) & 3;
+        r = (r << 3) | (r << 1) | (r >> 1);
         g = (g << 3) | (g << 1) | (g >> 1);
         b = (b << 3) | (b << 1) | (b >> 1);
-        cram_lut[j] =RGB(r,g,b);
+        cram_lut[j] = RGB(r, g, b);
     }
 }
-
-
