@@ -19,8 +19,18 @@
 
 #define BG_CELL_ADDR (VDP2_VRAM_ADDR(0, 0x00000))
 #define BG_MAP_ADDR (VDP2_VRAM_ADDR(0, 0x08000))
+#define NBG0_LINE_SCROLL VDP2_VRAM_ADDR(0, 0x04000)
 
 #define RGB(r, g, b) (0x8000U | ((b) << 10) | ((g) << 5) | (r))
+
+#define PERF_COUNTER(timer, code) \
+    \ 
+    perf_counter_start(&timer);   \
+    do                            \
+    {                             \
+        code;                     \
+    } while (0);                  \
+    perf_counter_end(&timer);
 
 uint16_t *ss_map = (uint16_t *)BG_MAP_ADDR;
 uint16_t *colBgAddr = (uint16_t *)BG_PAL_ADDR; // NBGO0
@@ -39,6 +49,10 @@ static vdp1_vram_partitions_t _vdp1_vram_partitions;
 static vdp1_cmdt_list_t *_cmdt_list = NULL;
 vdp1_cmdt_t *smsSprite;
 
+vdp2_scrn_ls_h_t ls_tbl[0x10];
+
+static uint8_t sms_input[2] = {0, 0};
+
 void vdp1_sync_list()
 {
 }
@@ -47,12 +61,30 @@ void vdp1_clear_list()
 }
 uint8_t update_input()
 {
-    return 0xff;
+    return sms_input[0];
 }
 
 uint8_t update_input2()
 {
-    return 0xff;
+    return sms_input[1];
+}
+
+static uint8_t build_input(smpc_peripheral_digital_t *digital)
+{
+    uint8_t input = 0;
+    if (digital->pressed.button.up)
+        input |= INPUT_UP;
+    if (digital->pressed.button.down)
+        input |= INPUT_DOWN;
+    if (digital->pressed.button.left)
+        input |= INPUT_LEFT;
+    if (digital->pressed.button.right)
+        input |= INPUT_RIGHT;
+    if (digital->pressed.button.a)
+        input |= INPUT_BUTTON1;
+    if (digital->pressed.button.b)
+        input |= INPUT_BUTTON2;
+    return input;
 }
 
 static void load_rom(void)
@@ -76,10 +108,21 @@ static void wait_vblank()
     vdp2_sync_wait();
 }
 
+const vdp2_scrn_ls_format_t ls_format = {
+    .scroll_screen = VDP2_SCRN_NBG0,
+    .table_base = NBG0_LINE_SCROLL,
+    .interval = 0,
+    .type = VDP2_SCRN_LS_TYPE_HORZ};
+
 static void loop()
 {
     perf_counter_t frame_time;
     perf_counter_init(&frame_time);
+
+    perf_counter_t ls_time;
+    perf_counter_init(&ls_time);
+
+    smpc_peripheral_digital_t digital;
     while (1)
     {
         for (int i = 0; i < 256; i++)
@@ -93,23 +136,52 @@ static void loop()
         system_init(0);
         play = 1;
 
+        uint8_t reg_fix_scroll = 0;
+
         while (play)
         {
-            perf_counter_start(&frame_time);
+            // Input handling
+            smpc_peripheral_process();
+            smpc_peripheral_digital_port(1, &digital);
+            sms_input[0] = build_input(&digital);
 
-            sms_frame(0);
+            smpc_peripheral_digital_port(2, &digital);
+            sms_input[1] = build_input(&digital);
 
-            perf_counter_end(&frame_time);
-
-            dbgio_printf("[H[2J"
-                         "frametime: %4lu\n",
-                         frame_time.ticks);
-
+            // update back color
             *(uint16_t *)VDP2_VRAM_ADDR(3, 0x01FFFE) = colBgAddr[0];
-            vdp2_scrn_scroll_x_set(VDP2_SCRN_NBG0, vdp.scroll_x);
 
+            // run 1 frame
+            PERF_COUNTER(frame_time, {
+                sms_frame(0);
+            })
+
+            // update x/y scrolling
+            PERF_COUNTER(ls_time, {
+                if (!(vdp.reg[0] & 0x40))
+                    for (int i = 0; i < 0x10; i++)
+                        ls_tbl[i].horz = (-vdp.scroll_x - 1) << 16;
+
+                // todo disable ls if needed
+                vdp2_scrn_ls_set(&ls_format);
+
+                vdp_dma_enqueue((void *)NBG0_LINE_SCROLL,
+                                ls_tbl,
+                                sizeof(ls_tbl));
+                vdp2_scrn_scroll_x_set(VDP2_SCRN_NBG0, vdp.scroll_x << 16);
+                vdp2_scrn_scroll_y_set(VDP2_SCRN_NBG0, vdp.scroll_y << 16);
+            })
+
+            // debug
+            dbgio_printf("[H[2J"
+                         "frametime: %4lu\n"
+                         "lstime: %4lu\n",
+                         frame_time.ticks,
+                         ls_time.ticks);
             dbgio_flush();
             wait_vblank();
+
+            reg_fix_scroll = vdp.reg[0] & 0x40;
         }
     }
 }
@@ -171,6 +243,7 @@ void main()
 
     _cmdt_list_init();
 
+    vdp2_scrn_ls_set(&ls_format);
     make_cram_lut();
     make_bp_lut();
 
@@ -181,13 +254,13 @@ static void vdp2_init()
 {
     const vdp2_vram_cycp_t vram_cycp = {
         .pt[0].t0 = VDP2_VRAM_CYCP_PNDR_NBG0,
-        .pt[0].t1 = VDP2_VRAM_CYCP_NO_ACCESS,
-        .pt[0].t2 = VDP2_VRAM_CYCP_NO_ACCESS,
-        .pt[0].t3 = VDP2_VRAM_CYCP_NO_ACCESS,
+        .pt[0].t1 = VDP2_VRAM_CYCP_CPU_RW,
+        .pt[0].t2 = VDP2_VRAM_CYCP_CPU_RW,
+        .pt[0].t3 = VDP2_VRAM_CYCP_CPU_RW,
         .pt[0].t4 = VDP2_VRAM_CYCP_CHPNDR_NBG0,
-        .pt[0].t5 = VDP2_VRAM_CYCP_NO_ACCESS,
-        .pt[0].t6 = VDP2_VRAM_CYCP_NO_ACCESS,
-        .pt[0].t7 = VDP2_VRAM_CYCP_NO_ACCESS,
+        .pt[0].t5 = VDP2_VRAM_CYCP_CPU_RW,
+        .pt[0].t6 = VDP2_VRAM_CYCP_CPU_RW,
+        .pt[0].t7 = VDP2_VRAM_CYCP_CPU_RW,
 
         .pt[1].t0 = VDP2_VRAM_CYCP_NO_ACCESS,
         .pt[1].t1 = VDP2_VRAM_CYCP_NO_ACCESS,

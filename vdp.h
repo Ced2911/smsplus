@@ -26,8 +26,8 @@ typedef struct
     int line;
     int left;
 
-    int scroll_x;
-    int scroll_y;
+    byte scroll_x;
+    byte scroll_y;
     //    byte limit;
 } t_vdp;
 

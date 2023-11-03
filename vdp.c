@@ -134,11 +134,10 @@ void vdp_ctrl_w(int data)
             case 8:
                 // x =  ((vdp.reg[r]) ^ 0xff) & 0xff;
                 vdp.scroll_x = ((vdp.reg[r]) ^ 0xff);
-                vdp.scroll_x <<= 16;
                 break;
 
             case 9:
-                vdp.scroll_y = (vdp.reg[r] & 0xff) << 16;
+                vdp.scroll_y = (vdp.reg[r] & 0xff);
                 break;
             /* Update table addresses */
             case 2:

@@ -6,9 +6,7 @@
 
 // #define DEBUG 1
 unsigned dummy_write[0x100];
-fix16_t ls_tbl[3 * 256];
 t_sms sms;
-int scroll_x = 0, scroll_y = 0;
 unsigned int first = 1;
 
 /* Run the virtual console emulation for one frame */
@@ -24,10 +22,10 @@ void sms_frame(int skip_render)
    {
       z80_emulate(228);
 
-      if (vdp.line < 0x10 && (vdp.reg[0] & 0x40))
-         ls_tbl[vdp.line] = (-47 << 16);
-      else if (vdp.line < 0xC0)
-         ls_tbl[vdp.line] = scroll_x - (47 << 16);
+      // if (vdp.line < 0x10 && (vdp.reg[0] & 0x40))
+      //    ls_tbl[vdp.line] = (-47 << 16);
+      // else if (vdp.line < 0xC0)
+      //    ls_tbl[vdp.line] = vdp.scroll_x - (47 << 16);
 
       vdp_run();
    }
