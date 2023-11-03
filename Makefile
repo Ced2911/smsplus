@@ -17,7 +17,6 @@ SH_SRCS:= \
 	raze/z80intrf.c \
 	raze/raze.sx
 
-
 SH_CFLAGS+= -Os -I. -g
 SH_LDFLAGS+=
 
@@ -32,3 +31,7 @@ IP_1ST_READ_ADDR:= 0x06004000
 IP_1ST_READ_SIZE:= 0
 
 include $(YAUL_INSTALL_ROOT)/share/build.post.iso-cue.mk
+
+
+size: $(SH_BUILD_PATH)/$(SH_PROGRAM).elf
+	$(SH_NM) --print-size  $(SH_BUILD_PATH)/$(SH_PROGRAM).elf > $(SH_BUILD_PATH)/${SH_PROGRAM}.size.txt

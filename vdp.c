@@ -17,7 +17,7 @@ extern uint16_t *colAddr;
 extern uint16_t *colBgAddr;
 extern unsigned int hz;
 static uint16_t name_lut[NAME_LUT_SZ];
-static uint32_t bp_lut[0x10000];
+static uint32_t bp_lut[0x100];
 static uint16_t cram_lut[0x40];
 // static uint16_t *ss_map = (uint16_t *)SCL_VDP2_VRAM_B0;
 extern uint16_t *ss_map;
@@ -215,8 +215,11 @@ void vdp_data_w(int data)
             uint32 bp = *(uint32 *)&vdp.vram[index & ~3];
             uint32 *pg = (uint32 *)&bg_tex_data[(index & ~3)];
             uint32 *sg = (uint32 *)&spr_tex_data[(index & ~3)];
-            uint32 temp1 = bp_lut[bp & 0xFFFF];
-            uint32 temp2 = bp_lut[(bp >> 16) & 0xFFFF];
+
+            uint32 temp1 = (bp_lut[bp & 0xFF] << 1) | (bp_lut[(bp >> 8) & 0xff] << 0);
+            // uint32 temp2 = bp_lut[(bp >> 16) & 0xFFFF];
+            uint32 temp2 = (bp_lut[(bp >> 16) & 0xFF] << 1) | (bp_lut[(bp >> 24) & 0xff] << 0);
+
             *sg = (temp1 << 2 | temp2);
             *pg = (temp1 << 2 | temp2);
         }
@@ -413,42 +416,26 @@ void make_name_lut()
 void make_bp_lut(void)
 {
     int i, j;
-    for (j = 0; j < 0x10000; j++)
+    for (j = 0; j < 0x100; j++)
     {
         uint32 row = 0;
-        i = ((j >> 8) & 0xFF) | ((j & 0xFF) << 8);
+        i = j; //((j >> 8) & 0xFF) | ((j & 0xFF) << 8);
 
-        if (i & 0x8000)
-            row |= 0x20000000;
-        if (i & 0x4000)
-            row |= 0x02000000;
-        if (i & 0x2000)
-            row |= 0x00200000;
-        if (i & 0x1000)
-            row |= 0x00020000;
-        if (i & 0x0800)
-            row |= 0x00002000;
-        if (i & 0x0400)
-            row |= 0x00000200;
-        if (i & 0x0200)
-            row |= 0x00000020;
-        if (i & 0x0100)
-            row |= 0x00000002;
-        if (i & 0x0080)
+        if (i & 0x80)
             row |= 0x10000000;
-        if (i & 0x0040)
+        if (i & 0x40)
             row |= 0x01000000;
-        if (i & 0x0020)
+        if (i & 0x20)
             row |= 0x00100000;
-        if (i & 0x0010)
+        if (i & 0x10)
             row |= 0x00010000;
-        if (i & 0x0008)
+        if (i & 0x08)
             row |= 0x00001000;
-        if (i & 0x0004)
+        if (i & 0x04)
             row |= 0x00000100;
-        if (i & 0x0002)
+        if (i & 0x02)
             row |= 0x00000010;
-        if (i & 0x0001)
+        if (i & 0x01)
             row |= 0x00000001;
         bp_lut[j] = row;
     }
