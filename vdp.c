@@ -29,6 +29,9 @@ extern t_sms sms;
 /* VDP context */
 t_vdp vdp;
 
+extern void vdp_perf_start();
+extern void vdp_perf_end();
+
 // clang-format off
 /* Return values from the V counter */
 uint8 vcnt[0x200] =
@@ -171,7 +174,7 @@ void vdp_data_w(int data)
 {
     int index;
     int delta;
-
+    vdp_perf_start();
     /* Clear the pending flag */
     vdp.pending = 0;
 
@@ -319,6 +322,8 @@ void vdp_data_w(int data)
     /* Bump the VRAM address */
     //     vdp.addr ++;
     vdp.addr = (vdp.addr + 1) & 0x3FFF;
+
+    vdp_perf_end();
 }
 
 /* Read data from the VDP's data port */

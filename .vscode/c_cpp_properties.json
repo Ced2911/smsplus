@@ -21,7 +21,6 @@
             "cStandard": "gnu17",
             "cppStandard": "gnu++14",
             "intelliSenseMode": "linux-gcc-x64",
-            "compileCommands": "${workspaceFolder}/buildcmake/compile_commands.json",
             "configurationProvider": "ms-vscode.makefile-tools"
         },
         {

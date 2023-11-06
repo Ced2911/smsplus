@@ -8,14 +8,22 @@ include $(YAUL_INSTALL_ROOT)/share/build.pre.mk
 BUILTIN_ASSETS=
 
 SH_PROGRAM:= smsplus
-SH_SRCS:= \
-	system.c \
-	sms.c \
-	vdp.c \
-	saturn/yaul.c \
-	saturn/perf.c \
+
+CSZ80:=				\
+	cz80/cz80.c		\
+	cz80/intf.c
+
+RAZE:= 				\
 	raze/z80intrf.c \
 	raze/raze.sx
+
+SH_SRCS:= 			\
+	system.c 		\
+	sms.c 			\
+	vdp.c 			\
+	saturn/yaul.c 	\
+	saturn/perf.c 	\
+	$(RAZE)
 
 SH_CFLAGS+= -Os -I. -g
 SH_LDFLAGS+=

@@ -84,7 +84,7 @@ static uint8_t build_input(smpc_peripheral_digital_t *digital)
         input |= INPUT_BUTTON1;
     if (digital->pressed.button.b)
         input |= INPUT_BUTTON2;
-    return input;
+    return input ^ 0xff;
 }
 
 static void load_rom(void)
@@ -108,11 +108,46 @@ static void wait_vblank()
     vdp2_sync_wait();
 }
 
-const vdp2_scrn_ls_format_t ls_format = {
+static vdp2_scrn_ls_format_t ls_format = {
     .scroll_screen = VDP2_SCRN_NBG0,
     .table_base = NBG0_LINE_SCROLL,
     .interval = 0,
     .type = VDP2_SCRN_LS_TYPE_HORZ};
+
+static perf_counter_t vdp_time;
+static uint32_t vdp_tick_cnt;
+static uint32_t vdp_call_cnt;
+void vdp_perf_start()
+{
+    perf_counter_start(&vdp_time);
+    vdp_call_cnt++;
+}
+void vdp_perf_end()
+{
+    perf_counter_end(&vdp_time);
+    vdp_tick_cnt += vdp_time.ticks;
+}
+void vdp_perf_clear()
+{
+    vdp_tick_cnt = 0;
+    vdp_call_cnt = 0;
+}
+
+// used by custom emulator
+void emu_printf(const char *format, ...)
+{
+    static char emu_printf_buffer[256];
+    char *s = emu_printf_buffer;
+    volatile uint8_t *addr = (volatile uint8_t *)CS1(0x1000);
+    va_list args;
+
+    va_start(args, format);
+    (void)vsnprintf(emu_printf_buffer, 256, format, args);
+    va_end(args);
+
+    while (*s)
+        *addr = (uint8_t)*s++;
+}
 
 static void loop()
 {
@@ -121,6 +156,8 @@ static void loop()
 
     perf_counter_t ls_time;
     perf_counter_init(&ls_time);
+
+    perf_counter_init(&vdp_time);
 
     smpc_peripheral_digital_t digital;
     while (1)
@@ -158,30 +195,46 @@ static void loop()
 
             // update x/y scrolling
             PERF_COUNTER(ls_time, {
-                if (!(vdp.reg[0] & 0x40))
-                    for (int i = 0; i < 0x10; i++)
-                        ls_tbl[i].horz = (-vdp.scroll_x - 1) << 16;
+                // if reg changed
+                if (reg_fix_scroll != vdp.reg[0])
+                {
+                    if (!(vdp.reg[0] & 0x40))
+                    {
+                        ls_format.type = VDP2_SCRN_LS_TYPE_HORZ;
+                        for (int i = 0; i < 0x10; i++)
+                            ls_tbl[i].horz = (-vdp.scroll_x - 1) << 16;
 
-                // todo disable ls if needed
-                vdp2_scrn_ls_set(&ls_format);
+                        vdp_dma_enqueue((void *)NBG0_LINE_SCROLL,
+                                        ls_tbl,
+                                        sizeof(ls_tbl));
+                    }
+                    else
+                        ls_format.type = 0;
 
-                vdp_dma_enqueue((void *)NBG0_LINE_SCROLL,
-                                ls_tbl,
-                                sizeof(ls_tbl));
+                    vdp2_scrn_ls_set(&ls_format);
+                }
                 vdp2_scrn_scroll_x_set(VDP2_SCRN_NBG0, vdp.scroll_x << 16);
                 vdp2_scrn_scroll_y_set(VDP2_SCRN_NBG0, vdp.scroll_y << 16);
             })
 
             // debug
             dbgio_printf("[H[2J"
-                         "frametime: %4lu\n"
-                         "lstime: %4lu\n",
-                         frame_time.ticks,
-                         ls_time.ticks);
+                         "z80: %4lu\n"
+                         "vdp: %4lu\n",
+                         frame_time.ticks - vdp_tick_cnt,
+                         vdp_tick_cnt);
+
+            emu_printf("z80: %4lu\n"
+                       "vdp: %4lu -- (%d)\n",
+                       frame_time.ticks - vdp_tick_cnt,
+                       vdp_tick_cnt, vdp_call_cnt);
+
+            vdp_perf_clear();
+
             dbgio_flush();
             wait_vblank();
 
-            reg_fix_scroll = vdp.reg[0] & 0x40;
+            reg_fix_scroll = vdp.reg[0];
         }
     }
 }
